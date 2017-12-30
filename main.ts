@@ -27,7 +27,6 @@ $(() => {
 
     let StarStream = Observable.range(1, STAR_NUMBER)
         .map(() => {
-            //debugger;
             return {
                 x: Math.random() * parseInt(canvas.width.toString()),
                 y: Math.random() * parseInt(canvas.height.toString()),
@@ -105,10 +104,58 @@ $(() => {
             return enemyArray;
         }, []);
 
+    const SPACE_KEY_CODE = 32;
+
+
+    const PlayerFiring = Observable
+        .merge(
+            Observable.fromEvent(canvas, 'click'),
+            Observable.fromEvent(canvas, 'keydown')
+                .filter((event:KeyboardEvent) => {
+                    console.log(event.keyCode);
+                    return event.keyCode === SPACE_KEY_CODE
+                })
+        )
+        .startWith({
+            x: canvas.width / 2,
+            y: HERO_Y
+        })
+        .sample(Observable.interval(200))
+        .timestamp();
+
+    const HeroShots = Observable
+        .combineLatest(
+            SpaceShipStream,
+            PlayerFiring,
+            (spaceShip, playerFiring) => {
+                return {
+                    timestamp: playerFiring.timestamp,
+                    x: spaceShip.x
+                };
+            }
+        )
+        .distinctUntilChanged((shotPrev, shotNext) => {
+            return (shotPrev.timestamp === shotNext.timestamp);
+        })
+        .scan((shotArray: Array<any>, shot) => {
+            shotArray.push({x: shot.x, y: HERO_Y});
+            return shotArray;
+        }, []);
+
+    const SHOOTING_SPEED = 15;
+
+    const drawHeroShots = (heroShots) => {
+        heroShots.forEach((shot) => {
+            shot.y -= SHOOTING_SPEED;
+            drawTriangle(shot.x, shot.y, 5, '#cc000a', 'up');
+        });
+    }
+
     const renderScene = (actors) => {
         paintStars(actors.stars);
         drawSpaceShip(actors.spaceship.x, actors.spaceship.y);
         renderEnemies(actors.enemies);
+        drawHeroShots(actors.heroShots);
     };
 
     const game = Observable
@@ -116,12 +163,12 @@ $(() => {
             StarStream,
             SpaceShipStream,
             Enemies,
-            (stars, spaceship, enemies) => {
-            return { stars: stars, spaceship: spaceship, enemies: enemies };
-        });
+            HeroShots,
+            (stars, spaceship, enemies, heroShots) => {
+            return { stars: stars, spaceship: spaceship, enemies: enemies, heroShots: heroShots };
+        })
+        .sample(Observable.interval(300));
 
-    game
-        .sample(Observable.interval(40))
-        .subscribe(renderScene);
+    game.subscribe(renderScene);
 });
 
